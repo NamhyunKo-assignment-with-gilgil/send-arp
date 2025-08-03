@@ -3,6 +3,8 @@
 #include "ethhdr.h"
 #include "arphdr.h"
 #include <sys/ioctl.h>
+#include <stdint.h>
+#include <cstring>
 
 void usage() {
 	printf("syntax : send-arp <interface> <sender ip> <target ip> [<sender ip 2> <target ip 2> ...]\n");
@@ -18,10 +20,10 @@ void receive_arp(int c, char* sender_ip){
 	ARP_PACKET *packet = new ARP_PACKET;
 }
 
-ARP_PACKET send_arp_preparing(u_int8_t oper,
-	char* src_mac = "9a:12:30:f3:6b:40", char* dst_mac = "ff:ff:ff:ff:ff:ff",
-	char* sender_ip = "192.168.2.35", char* target_ip = "192.168.2.1",
-	char* sender_mac = "9a:12:30:f3:6b:40", char* target_mac = "00:00:00:00:00:00") {
+ARP_PACKET send_arp_preparing(uint8_t oper,
+	char* src_mac, char* dst_mac,
+	char* sender_ip, char* target_ip,
+	char* sender_mac, char* target_mac) {
 	ARP_PACKET packet;
 
 	memcpy(packet.eth_h.ether_dhost, stringmac_to_bytemac(dst_mac), 6); /* dst_mac */
@@ -59,7 +61,7 @@ int main(int argc, char* argv[]) {
 	while (1){
 		for(int i = 4; i < argc; i += 2) {
 			/* who is <target_ip>? request */
-			ARP_PACKET tip_req_packet = send_arp_preparing(1, "9a:12:30:f3:6b:40", "ff:ff:ff:ff:ff:ff", argv[i],argv[i+1], "9a:12:30:f3:6b:40", "00:00:00:00:00:00"); // ARP request operation
+			ARP_PACKET tip_req_packet = send_arp_preparing(1, "90:de:80:d5:a0:66", "ff:ff:ff:ff:ff:ff", argv[i],argv[i+1], "90:de:80:d5:a0:66", "00:00:00:00:00:00"); // ARP request operation
 			if (pcap_sendpacket(pcap, reinterpret_cast<const u_char*>(&tip_req_packet), sizeof(tip_req_packet)) != 0) {
 				fprintf(stderr, "send packet error: %s\n", pcap_geterr(pcap));
 				return -1;
