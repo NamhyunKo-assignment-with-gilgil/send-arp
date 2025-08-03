@@ -1,5 +1,7 @@
 #pragma once
-#include <stdio.h>
+#include <iostream>
+#include <string>
+#include <stdint.h>
 
 typedef struct MY_ARP_HEADER{
 	u_int16_t hardware_type;		/* hardware type 16bit */
@@ -13,34 +15,5 @@ typedef struct MY_ARP_HEADER{
 	u_int8_t target_ip_address[4];	/* target ip address 32bit */
 } ARP_HDR;
 
-void print_sender_mac_address(ARP_HDR* arp){
-	for(int i = 0; i < 6; i++){
-		printf("%d",arp->sender_mac_address[i]);
-		if(i != 5) printf(":");
-		else printf("\n");
-	}
-}
-
-void print_target_mac_address(ARP_HDR* arp){
-	for(int i = 0; i < 6; i++){
-		printf("%d",arp->target_mac_address[i]);
-		if(i != 5) printf(":");
-		else printf("\n");
-	}
-}
-
-void print_sender_ip_address(ARP_HDR* arp){
-	for(int i = 0; i < 4; i++){
-		printf("%d",arp->sender_ip_address[3 - i]);
-		if(i != 3) printf(".");
-		else printf("\n");
-	}
-}
-
-void print_target_ip_address(ARP_HDR* arp){
-	for(int i = 0; i < 4; i++){
-		printf("%d",arp->target_ip_address[3 - i]);
-		if(i != 3) printf(".");
-		else printf("\n");
-	}
-}
+u_int8_t* stringip_to_byteip(const char* str_ip);
+char* byteip_to_stringip(u_int8_t* byte_ip);
