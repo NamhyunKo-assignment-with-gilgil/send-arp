@@ -16,7 +16,7 @@ https://gitlab.com/gilgil/sns/-/wikis/about-arp/report-send-arp
 
 - (출처 : https://en.wikipedia.org/wiki/Address_Resolution_Protocol)
     
-    ![image.png](attachment:1b2f628a-cda9-48c6-945a-eb558a3ca51f:image.png)
+    ![image.png](arp_header.png)
     
 - (출처 : https://sambalim.tistory.com/59)
 
