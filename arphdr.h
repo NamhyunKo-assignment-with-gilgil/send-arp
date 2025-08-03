@@ -15,5 +15,5 @@ typedef struct MY_ARP_HEADER{
 	uint8_t target_ip_address[4];	/* target ip address 32bit */
 } ARP_HDR;
 
-uint8_t* stringip_to_byteip(const char* str_ip);
-char* byteip_to_stringip(uint8_t* byte_ip);
+void stringip_to_byteip(const char* str_ip, uint8_t* byte_ip);
+void byteip_to_stringip(uint8_t* byte_ip, char* str_ip);
