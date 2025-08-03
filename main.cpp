@@ -24,10 +24,6 @@ typedef struct ARP_INFECTION_PACKET {
 	ARP_HDR arp_h;
 } __attribute__((packed)) ARP_PACKET;	/* wireshark로 확인 후 00 00 있는거 확인 후 구조체패딩 해제 */
 
-void receive_arp(int c, char* sender_ip){
-	ARP_PACKET *packet = new ARP_PACKET;
-}
-
 ARP_PACKET send_arp_preparing(
 	char* src_mac, char* dst_mac,
 	uint8_t oper,
